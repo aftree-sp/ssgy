@@ -1,0 +1,87 @@
+name: Build iOS
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+
+      - name: Install Rust dependencies (cached)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2"
+
+      - name: Build web frontend
+        run: npm run build
+
+      - name: Initialize iOS Xcode project
+        run: cargo tauri ios init
+        working-directory: src-tauri
+
+      - name: Copy custom Swift code into Xcode project
+        run: |
+          # Custom Swift files are already referenced by the Xcode project
+          # Ensure the iOS module path exists
+          mkdir -p src-tauri/gen/ios/App/Sources
+          # Copy our flash.swift into the Xcode sources
+          cp src-tauri/src/ios/flash.swift src-tauri/gen/ios/App/Sources/
+
+      - name: Build iOS (debug — for sideloading)
+        run: |
+          cargo tauri ios build --target aarch64-apple-ios --debug
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        continue-on-error: true
+
+      - name: Build iOS (release — for App Store / TestFlight)
+        run: |
+          cargo tauri ios build --target aarch64-apple-ios --release
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+
+      - name: Upload debug IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ssgy-ios-debug
+          path: src-tauri/gen/ios/build/arm64/*.ipa
+          if-no-files-found: ignore
+
+      - name: Upload release IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ssgy-ios-release
+          path: src-tauri/gen/ios/build/arm64_release/*.ipa
+          if-no-files-found: ignore
