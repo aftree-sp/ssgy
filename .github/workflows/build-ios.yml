@@ -25,32 +25,6 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Generate App Icon
-        run: |
-          python3 -c "
-import struct, zlib
-def create_png(w,h,color):
-    raw = b''
-    for y in range(h):
-        raw += b'\x00'
-        for x in range(w):
-            cx,cy = x-w//2, y-h//2
-            d = ((cx*cx + cy*cy)**0.5)/(w//2)
-            r = int(color[0]*(1-min(d,1)))
-            g = int(color[1]*(1-min(d,1)))
-            b_val = int(color[2]*(1-min(d,1)))
-            raw += struct.pack('BBBB', r,g,b_val,255)
-    def chunk(ctype,data):
-        c = ctype + data
-        return struct.pack('>I',len(data)) + c + struct.pack('>I',zlib.crc32(c)&0xffffffff)
-    ihdr = struct.pack('>IIBBBBB',w,h,8,6,0,0,0)
-    idat = zlib.compress(raw)
-    return b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',ihdr)+chunk(b'IDAT',idat)+chunk(b'IEND',b'')
-icon = create_png(1024,1024,(255,59,48))
-with open('ssgy/Assets.xcassets/AppIcon.appiconset/icon-1024.png','wb') as f: f.write(icon)
-print('Icon generated')
-"
-
       - name: Build unsigned .app
         run: |
           xcodebuild -project ssgy.xcodeproj \
