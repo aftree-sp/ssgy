@@ -1,5 +1,3 @@
-use tauri::Manager;
-
 // iOS native flashlight bridge
 #[cfg(target_os = "ios")]
 mod flash;

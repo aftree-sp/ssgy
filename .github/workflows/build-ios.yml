@@ -33,32 +33,43 @@ jobs:
         with:
           targets: aarch64-apple-ios
 
-      - name: Cache Rust dependencies
+      - name: Cache Rust dependencies (app crate)
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+
+      - name: Cache tauri-cli (cargo crate)
+        id: cache-tauri-cli
+        uses: actions/cache@v4
+        with:
+          path: |
+            /usr/local/cargo/bin/cargo-tauri
+            /usr/local/cargo/bin/tauri
+          key: tauri-cli-bin-v2-${{ runner.os }}
+
+      - name: Install tauri-cli via cargo
+        if: steps.cache-tauri-cli.outputs.cache-hit != 'true'
+        run: cargo install tauri-cli --version "^2"
 
       - name: Build web frontend
         run: npm run build
 
       - name: Generate Xcode project
-        run: npx tauri ios init
-        env:
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID || '' }}
+        run: cargo tauri ios init
 
-      - name: Inject custom Swift code into Xcode project
+      - name: Inject custom Swift code
         run: |
           mkdir -p src-tauri/gen/ios/App/Sources
           cp src-tauri/src/ios/flash.swift src-tauri/gen/ios/App/Sources/
 
-      - name: Build iOS debug IPA (for sideloading)
-        run: npx tauri ios build --target aarch64-apple-ios --debug
+      - name: Build iOS debug IPA
+        run: cargo tauri ios build --target aarch64-apple-ios --debug
         continue-on-error: true
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID || '' }}
 
-      - name: Build iOS release IPA (for TestFlight / App Store)
-        run: npx tauri ios build --target aarch64-apple-ios
+      - name: Build iOS release IPA
+        run: cargo tauri ios build --target aarch64-apple-ios
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID || '' }}
 
