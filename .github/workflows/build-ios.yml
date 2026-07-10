@@ -28,17 +28,17 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Setup Rust
+      - name: Setup Rust (all iOS targets)
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-ios
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
 
       - name: Cache Rust dependencies (app crate)
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
 
-      - name: Cache tauri-cli (cargo crate)
+      - name: Cache tauri-cli binary
         id: cache-tauri-cli
         uses: actions/cache@v4
         with:
@@ -51,12 +51,17 @@ jobs:
         if: steps.cache-tauri-cli.outputs.cache-hit != 'true'
         run: cargo install tauri-cli --version "^2"
 
+      - name: Install CocoaPods
+        run: brew install cocoapods
+
       - name: Build web frontend
         run: npm run build
 
       - name: Generate Xcode project
         run: cargo tauri ios init
         working-directory: src-tauri
+        env:
+          TAURI_APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
 
       - name: Inject custom Swift code
         run: |
@@ -69,13 +74,13 @@ jobs:
         continue-on-error: true
         working-directory: src-tauri
         env:
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID || '' }}
+          TAURI_APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
 
       - name: Build iOS release IPA
         run: cargo tauri ios build --target aarch64-apple-ios
         working-directory: src-tauri
         env:
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID || '' }}
+          TAURI_APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
 
       - name: Upload debug IPA
         uses: actions/upload-artifact@v4
