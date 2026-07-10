@@ -25,19 +25,31 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
+      - name: Debug project settings
+        run: xcodebuild -project ssgy.xcodeproj -scheme ssgy -showBuildSettings CODE_SIGNING_ALLOWED=NO | head -40
+
       - name: Build unsigned .app
         run: |
+          set -o pipefail
           xcodebuild -project ssgy.xcodeproj \
             -scheme ssgy \
-            -configuration Release \
-            -destination 'generic/platform=iOS' \
+            -configuration Debug \
+            -sdk iphoneos \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            DEVELOPMENT_TEAM="" \
-            PROVISIONING_PROFILE_SPECIFIER="" \
-            build 2>&1
+            build 2>&1 | tail -100
+
+      - name: Find build artifacts (always)
+        if: always()
+        run: |
+          echo "=== BUILD DIR ==="
+          ls -la build/ 2>/dev/null || echo "no build dir"
+          echo "=== .app FILES ==="
+          find build -name "*.app" -type d 2>/dev/null || echo "no .app found"
+          echo "=== .xcarchive ==="
+          find build -name "*.xcarchive" -type d 2>/dev/null || echo "no xcarchive"
+          echo "=== .ipa ==="
+          find build -name "*.ipa" 2>/dev/null || echo "no IPA"
 
       - name: Package unsigned IPA
         run: |
