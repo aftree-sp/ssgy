@@ -1,6 +1,5 @@
-node_modules/
-dist/
+*.ipa
+*.app
 .DS_Store
-*.log
-src-tauri/target/
-src-tauri/Cargo.lock
+build/
+DerivedData/
