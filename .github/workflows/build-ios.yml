@@ -26,9 +26,9 @@ jobs:
         run: xcodegen generate
 
       - name: Debug project settings
-        run: xcodebuild -project ssgy.xcodeproj -scheme ssgy -showBuildSettings CODE_SIGNING_ALLOWED=NO | head -40
+        run: xcodebuild -project ssgy.xcodeproj -scheme ssgy -showBuildSettings CODE_SIGNING_ALLOWED=NO 2>&1 | head -40
 
-      - name: Build unsigned .app
+      - name: Build unsigned .app (save log)
         run: |
           set -o pipefail
           xcodebuild -project ssgy.xcodeproj \
@@ -37,7 +37,21 @@ jobs:
             -sdk iphoneos \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
-            build 2>&1 | tail -100
+            build 2>&1 | tee xcodebuild.log
+          exit ${PIPESTATUS[0]}
+        continue-on-error: true
+
+      - name: Show last 50 lines of build log
+        if: always()
+        run: tail -50 xcodebuild.log
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: xcodebuild.log
+          if-no-files-found: ignore
 
       - name: Find build artifacts (always)
         if: always()
@@ -48,8 +62,7 @@ jobs:
           find build -name "*.app" -type d 2>/dev/null || echo "no .app found"
           echo "=== .xcarchive ==="
           find build -name "*.xcarchive" -type d 2>/dev/null || echo "no xcarchive"
-          echo "=== .ipa ==="
-          find build -name "*.ipa" 2>/dev/null || echo "no IPA"
+          find build -name "*.o" -type f 2>/dev/null | head -5 || true
 
       - name: Package unsigned IPA
         run: |
