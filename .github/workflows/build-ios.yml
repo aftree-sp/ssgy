@@ -30,14 +30,14 @@ jobs:
           xcodebuild -project ssgy.xcodeproj \
             -scheme ssgy \
             -configuration Release \
-            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM="" \
             PROVISIONING_PROFILE_SPECIFIER="" \
-            build
+            build 2>&1
 
       - name: Package unsigned IPA
         run: |
