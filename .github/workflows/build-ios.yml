@@ -56,20 +56,24 @@ jobs:
 
       - name: Generate Xcode project
         run: cargo tauri ios init
+        working-directory: src-tauri
 
       - name: Inject custom Swift code
         run: |
-          mkdir -p src-tauri/gen/ios/App/Sources
-          cp src-tauri/src/ios/flash.swift src-tauri/gen/ios/App/Sources/
+          mkdir -p gen/ios/App/Sources
+          cp src/ios/flash.swift gen/ios/App/Sources/
+        working-directory: src-tauri
 
       - name: Build iOS debug IPA
         run: cargo tauri ios build --target aarch64-apple-ios --debug
         continue-on-error: true
+        working-directory: src-tauri
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID || '' }}
 
       - name: Build iOS release IPA
         run: cargo tauri ios build --target aarch64-apple-ios
+        working-directory: src-tauri
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID || '' }}
 
