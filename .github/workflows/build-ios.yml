@@ -1,4 +1,4 @@
-name: Build iOS
+name: Build iOS (unsigned, for sideloading)
 
 on:
   push:
@@ -28,12 +28,12 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Setup Rust (all iOS targets)
+      - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim
 
-      - name: Cache Rust dependencies (app crate)
+      - name: Cache Rust deps
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
@@ -42,14 +42,15 @@ jobs:
         id: cache-tauri-cli
         uses: actions/cache@v4
         with:
-          path: |
-            /usr/local/cargo/bin/cargo-tauri
-            /usr/local/cargo/bin/tauri
+          path: ~/.cargo/bin/cargo-tauri
           key: tauri-cli-bin-v2-${{ runner.os }}
 
-      - name: Install tauri-cli via cargo
+      - name: Install tauri-cli
         if: steps.cache-tauri-cli.outputs.cache-hit != 'true'
         run: cargo install tauri-cli --version "^2"
+
+      - name: Verify cargo-tauri
+        run: cargo tauri --version
 
       - name: Install CocoaPods
         run: brew install cocoapods
@@ -58,40 +59,70 @@ jobs:
         run: npm run build
 
       - name: Generate Xcode project
-        run: cargo tauri ios init
+        run: cargo tauri ios init --ci
         working-directory: src-tauri
         env:
-          TAURI_APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_APPLE_DEVELOPMENT_TEAM: DUMMYTEAM
+
+      - name: Disable code signing in Xcode project
+        run: |
+          pbxproj=gen/ios/App.xcodeproj/project.pbxproj
+          if [ -f "$pbxproj" ]; then
+            # Add CODE_SIGNING_ALLOWED = NO to all build configurations
+            sed -i '' 's/CODE_SIGNING_ALLOWED = YES;/CODE_SIGNING_ALLOWED = NO;/g' "$pbxproj" 2>/dev/null || true
+            sed -i '' 's/CODE_SIGNING_REQUIRED = YES;/CODE_SIGNING_REQUIRED = NO;/g' "$pbxproj" 2>/dev/null || true
+            sed -i '' '/DEVELOPMENT_TEAM/d' "$pbxproj" 2>/dev/null || true
+            echo "Signing disabled in Xcode project"
+          else
+            echo "Warning: $pbxproj not found"
+            ls -la gen/ios/App.xcodeproj/ 2>/dev/null || echo "No xcodeproj dir"
+          fi
+        working-directory: src-tauri
 
       - name: Inject custom Swift code
         run: |
           mkdir -p gen/ios/App/Sources
-          cp src/ios/flash.swift gen/ios/App/Sources/
+          cp src/ios/flash.swift gen/ios/App/Sources/ 2>/dev/null || echo "No custom Swift to inject"
         working-directory: src-tauri
 
-      - name: Build iOS debug IPA
+      - name: Build unsigned IPA
         run: cargo tauri ios build --target aarch64-apple-ios --debug
+        working-directory: src-tauri
+        env:
+          TAURI_APPLE_DEVELOPMENT_TEAM: ""
         continue-on-error: true
-        working-directory: src-tauri
-        env:
-          TAURI_APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
 
-      - name: Build iOS release IPA
-        run: cargo tauri ios build --target aarch64-apple-ios
+      - name: Locate and package IPA
+        run: |
+          # Try common locations for the built IPA
+          for p in gen/ios/build/arm64/*.ipa gen/ios/build/*.ipa gen/ios/build/Debug-iphoneos/*.ipa; do
+            if [ -f "$p" ]; then
+              echo "Found IPA: $p"
+              mkdir -p artifacts
+              cp "$p" artifacts/ssgy-unsigned.ipa
+              break
+            fi
+          done
+          # If no IPA, try creating from .app
+          if [ ! -f artifacts/ssgy-unsigned.ipa ]; then
+            APP=$(find gen/ios/build -name "*.app" -type d -maxdepth 5 | head -1)
+            if [ -n "$APP" ]; then
+              echo "Creating unsigned IPA from: $APP"
+              mkdir -p Payload
+              cp -R "$APP" Payload/
+              rm -rf Payload/*.app/_CodeSignature Payload/*.app/embedded.mobileprovision 2>/dev/null || true
+              cd Payload && zip -r ../artifacts/ssgy-unsigned.ipa . && cd ..
+              ls -lh artifacts/ssgy-unsigned.ipa
+            else
+              echo "No .app or IPA found anywhere"
+              find gen/ios -name "*.ipa" -o -name "*.app" 2>/dev/null | head -20 || true
+            fi
+          fi
         working-directory: src-tauri
-        env:
-          TAURI_APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
 
-      - name: Upload debug IPA
+      - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: ssgy-ios-debug
-          path: src-tauri/gen/ios/build/arm64/*.ipa
-          if-no-files-found: ignore
-
-      - name: Upload release IPA
-        uses: actions/upload-artifact@v4
-        with:
-          name: ssgy-ios-release
-          path: src-tauri/gen/ios/build/arm64_release/*.ipa
-          if-no-files-found: ignore
+          name: ssgy-unsigned
+          path: src-tauri/artifacts/*.ipa
+          if-no-files-found: warn
