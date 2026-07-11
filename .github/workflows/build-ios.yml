@@ -19,63 +19,68 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Debug swiftc iOS compilation
+      - name: Debug compilation
         run: |
-          set -x
-          # Check what version we're dealing with
-          xcodebuild -version
-          xcrun swift -version 2>&1
-          xcrun --sdk iphoneos --show-sdk-path 2>&1
-          xcrun --sdk iphoneos --show-sdk-version 2>&1
-
-          # Test 1: simplest possible iOS compile
+          xcrun --sdk iphoneos --show-sdk-path > /tmp/build.log 2>&1
+          xcrun -sdk iphoneos swiftc -print-target-info >> /tmp/build.log 2>&1
+          echo '---' >> /tmp/build.log
+          echo 'let x = 1' | xcrun -sdk iphoneos swiftc - -o /tmp/t1.o -emit-object >> /tmp/build.log 2>&1
+          echo "exit=$?" >> /tmp/build.log
+          echo '---' >> /tmp/build.log
           echo 'import UIKit; print("ok")' > /tmp/t1.swift
-          xcrun -sdk iphoneos swiftc -target arm64-apple-ios16.0 -parse-as-library /tmp/t1.swift -o /tmp/t1.o -emit-object 2>&1
-          echo "Test 1 (object): OK"
-          ls -la /tmp/t1.o
+          xcrun -sdk iphoneos swiftc -target arm64-apple-ios16.0 /tmp/t1.swift -o /tmp/t1.o -emit-object >> /tmp/build.log 2>&1
+          echo "exit=$?" >> /tmp/build.log
+          echo '---XXX---' >> /tmp/build.log
+          cat /tmp/build.log
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: /tmp/build.log
+          if-no-files-found: ignore
 
       - name: Build .app
         run: |
-          set -x
           SDK=$(xcrun --sdk iphoneos --show-sdk-path)
           mkdir -p build/ssgy.app
 
           # Compile AppDelegate
           xcrun -sdk iphoneos swiftc -target arm64-apple-ios16.0 \
-            -parse-as-library \
-            -emit-object \
+            -parse-as-library -emit-object \
             -o build/AppDelegate.o \
-            ssgy/AppDelegate.swift 2>&1
-          echo "AppDelegate compiled"
+            ssgy/AppDelegate.swift 2>>/tmp/err.log || true
+          cat /tmp/err.log 2>/dev/null || true
 
           # Compile ViewController
           xcrun -sdk iphoneos swiftc -target arm64-apple-ios16.0 \
-            -parse-as-library \
-            -emit-object \
+            -parse-as-library -emit-object \
             -o build/ViewController.o \
-            ssgy/ViewController.swift 2>&1
-          echo "ViewController compiled"
+            ssgy/ViewController.swift 2>>/tmp/err2.log || true
+          cat /tmp/err2.log 2>/dev/null || true
 
-          # Link into executable
-          xcrun -sdk iphoneos swiftc \
-            -target arm64-apple-ios16.0 \
-            -emit-executable \
-            -o build/ssgy.app/ssgy \
-            build/AppDelegate.o build/ViewController.o \
-            -framework UIKit -framework AVFoundation -framework Foundation 2>&1
-          echo "Link OK"
+          # Link
+          if [ -f build/AppDelegate.o ] && [ -f build/ViewController.o ]; then
+            xcrun -sdk iphoneos swiftc -target arm64-apple-ios16.0 \
+              -emit-executable -o build/ssgy.app/ssgy \
+              build/AppDelegate.o build/ViewController.o
+            cp ssgy/Info.plist build/ssgy.app/
+            printf 'APPL????' > build/ssgy.app/PkgInfo
+            ls -lh build/ssgy.app/ssgy
+          fi
 
-          ls -lh build/ssgy.app/ssgy
-          file build/ssgy.app/ssgy
-          cp ssgy/Info.plist build/ssgy.app/
-          printf 'APPL????' > build/ssgy.app/PkgInfo
-
-      - name: Package unsigned IPA
+      - name: Package IPA
         run: |
-          mkdir -p Payload
-          cp -R build/ssgy.app Payload/
-          cd Payload && zip -r ../ssgy-unsigned.ipa . && cd ..
-          ls -lh ssgy-unsigned.ipa
+          if [ -f build/ssgy.app/ssgy ]; then
+            mkdir -p Payload
+            cp -R build/ssgy.app Payload/
+            cd Payload && zip -r ../ssgy-unsigned.ipa . && cd ..
+            ls -lh ssgy-unsigned.ipa
+          else
+            echo "No binary built, skipping IPA"
+            exit 1
+          fi
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
