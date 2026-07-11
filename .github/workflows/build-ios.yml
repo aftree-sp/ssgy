@@ -19,26 +19,54 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build .app with swiftc
+      - name: Debug swiftc iOS compilation
         run: |
-          set -euxo pipefail
-          SDK=$(xcrun --sdk iphoneos --show-sdk-path 2>&1)
-          echo "SDK path: $SDK"
+          set -x
+          # Check what version we're dealing with
+          xcodebuild -version
+          xcrun swift -version 2>&1
+          xcrun --sdk iphoneos --show-sdk-path 2>&1
+          xcrun --sdk iphoneos --show-sdk-version 2>&1
+
+          # Test 1: simplest possible iOS compile
+          echo 'import UIKit; print("ok")' > /tmp/t1.swift
+          xcrun -sdk iphoneos swiftc -target arm64-apple-ios16.0 -parse-as-library /tmp/t1.swift -o /tmp/t1.o -emit-object 2>&1
+          echo "Test 1 (object): OK"
+          ls -la /tmp/t1.o
+
+      - name: Build .app
+        run: |
+          set -x
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
           mkdir -p build/ssgy.app
 
-          # test minimal iOS compile
-          printf 'import UIKit; @main class X: UIResponder, UIApplicationDelegate { var w: UIWindow?; func application(_: UIApplication, didFinishLaunchingWithOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool { return true } }' > /tmp/test.swift
-          xcrun -sdk iphoneos swiftc -target arm64-apple-ios16.0 /tmp/test.swift -o /tmp/test_bin -emit-executable 2>&1
-          echo "test OK"
-          file /tmp/test_bin
-
-          # real app
+          # Compile AppDelegate
           xcrun -sdk iphoneos swiftc -target arm64-apple-ios16.0 \
+            -parse-as-library \
+            -emit-object \
+            -o build/AppDelegate.o \
+            ssgy/AppDelegate.swift 2>&1
+          echo "AppDelegate compiled"
+
+          # Compile ViewController
+          xcrun -sdk iphoneos swiftc -target arm64-apple-ios16.0 \
+            -parse-as-library \
+            -emit-object \
+            -o build/ViewController.o \
+            ssgy/ViewController.swift 2>&1
+          echo "ViewController compiled"
+
+          # Link into executable
+          xcrun -sdk iphoneos swiftc \
+            -target arm64-apple-ios16.0 \
+            -emit-executable \
             -o build/ssgy.app/ssgy \
-            ssgy/AppDelegate.swift ssgy/ViewController.swift \
-            -emit-executable 2>&1
-          echo "app OK"
+            build/AppDelegate.o build/ViewController.o \
+            -framework UIKit -framework AVFoundation -framework Foundation 2>&1
+          echo "Link OK"
+
           ls -lh build/ssgy.app/ssgy
+          file build/ssgy.app/ssgy
           cp ssgy/Info.plist build/ssgy.app/
           printf 'APPL????' > build/ssgy.app/PkgInfo
 
