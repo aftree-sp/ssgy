@@ -21,41 +21,50 @@ jobs:
 
       - name: Build .app
         run: |
+          set -eux
           SDK=$(xcrun --sdk iphoneos --show-sdk-path)
           echo "SDK: $SDK"
           mkdir -p build/ssgy.app
 
-          # Compile AppDelegate → .o
-          swiftc \
-            -sdk "$SDK" \
-            -target arm64-apple-ios18.5 \
-            -parse-as-library -emit-object \
-            -o build/AppDelegate.o \
-            ssgy/AppDelegate.swift 2>&1
-          echo "AppDelegate OK"
+          {
+            echo "=== print-target-info ==="
+            swiftc -print-target-info
 
-          # Compile ViewController → .o
-          swiftc \
-            -sdk "$SDK" \
-            -target arm64-apple-ios18.5 \
-            -parse-as-library -emit-object \
-            -o build/ViewController.o \
-            ssgy/ViewController.swift 2>&1
-          echo "ViewController OK"
+            echo "=== swiftc -frontend -help (target) ==="
+            swiftc -target arm64-apple-ios18.5 -print-target-info
 
-          # Link → executable
-          swiftc \
-            -sdk "$SDK" \
-            -target arm64-apple-ios18.5 \
-            -emit-executable \
-            -o build/ssgy.app/ssgy \
-            build/AppDelegate.o build/ViewController.o \
-            -framework UIKit -framework AVFoundation 2>&1
-          echo "Link OK"
+            echo "=== compile AppDelegate ==="
+            swiftc \
+              -sdk "$SDK" \
+              -target arm64-apple-ios18.5 \
+              -emit-object \
+              -o build/AppDelegate.o \
+              ssgy/AppDelegate.swift
+            echo "AppDelegate OK"
 
-          file build/ssgy.app/ssgy
-          cp ssgy/Info.plist build/ssgy.app/
-          printf 'APPL????' > build/ssgy.app/PkgInfo
+            echo "=== compile ViewController ==="
+            swiftc \
+              -sdk "$SDK" \
+              -target arm64-apple-ios18.5 \
+              -emit-object \
+              -o build/ViewController.o \
+              ssgy/ViewController.swift
+            echo "ViewController OK"
+
+            echo "=== link ==="
+            swiftc \
+              -sdk "$SDK" \
+              -target arm64-apple-ios18.5 \
+              -emit-executable \
+              -o build/ssgy.app/ssgy \
+              build/AppDelegate.o build/ViewController.o \
+              -framework UIKit -framework AVFoundation -framework Foundation
+            echo "Link OK"
+
+            file build/ssgy.app/ssgy
+            cp ssgy/Info.plist build/ssgy.app/
+            printf 'APPL????' > build/ssgy.app/PkgInfo
+          } 2>&1 | tee build.log
 
       - name: Package IPA
         run: |
@@ -74,3 +83,11 @@ jobs:
           name: ssgy-unsigned
           path: ssgy-unsigned.ipa
           if-no-files-found: error
+
+      - name: Upload build log (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: ignore
