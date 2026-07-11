@@ -19,40 +19,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build .app with swiftc (direct, no Xcode project needed)
+      - name: Build .app with swiftc
         run: |
-          set -eux
-          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-          echo "SDK: $SDK"
+          set -euxo pipefail
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path 2>&1)
+          echo "SDK path: $SDK"
           mkdir -p build/ssgy.app
 
-          # Compile Swift sources into a single executable
-          swiftc \
-            -target arm64-apple-ios16.0 \
-            -sdk "$SDK" \
-            -module-name ssgy \
-            -emit-executable \
+          # test minimal iOS compile
+          printf 'import UIKit; @main class X: UIResponder, UIApplicationDelegate { var w: UIWindow?; func application(_: UIApplication, didFinishLaunchingWithOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool { return true } }' > /tmp/test.swift
+          xcrun -sdk iphoneos swiftc -target arm64-apple-ios16.0 /tmp/test.swift -o /tmp/test_bin -emit-executable 2>&1
+          echo "test OK"
+          file /tmp/test_bin
+
+          # real app
+          xcrun -sdk iphoneos swiftc -target arm64-apple-ios16.0 \
             -o build/ssgy.app/ssgy \
-            ssgy/AppDelegate.swift \
-            ssgy/ViewController.swift \
-            -framework UIKit \
-            -framework AVFoundation \
-            -framework Foundation \
-            -Xlinker -rpath -Xlinker /usr/lib/swift \
-            -tools-destination /dev/null
-
-          echo "=== Binary size ==="
+            ssgy/AppDelegate.swift ssgy/ViewController.swift \
+            -emit-executable 2>&1
+          echo "app OK"
           ls -lh build/ssgy.app/ssgy
-          file build/ssgy.app/ssgy
-
-          # Copy Info.plist
           cp ssgy/Info.plist build/ssgy.app/
-
-          # Create PkgInfo (required for iOS app bundles)
-          echo -n 'APPL???' > build/ssgy.app/PkgInfo
-
-          echo "=== Bundle contents ==="
-          ls -la build/ssgy.app/
+          printf 'APPL????' > build/ssgy.app/PkgInfo
 
       - name: Package unsigned IPA
         run: |
