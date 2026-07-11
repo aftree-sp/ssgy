@@ -25,7 +25,14 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Build .app (ad-hoc signed)
+      - name: Inspect generated project
+        run: |
+          echo "=== xcodebuild -list ==="
+          xcodebuild -project ssgy.xcodeproj -list
+          echo "=== Info.plist path check ==="
+          ls -la ssgy/Info.plist
+
+      - name: Build .app
         run: |
           set -euxo pipefail
           xcodebuild -project ssgy.xcodeproj \
@@ -33,12 +40,7 @@ jobs:
             -configuration Release \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=YES \
             CODE_SIGN_IDENTITY="-" \
-            CODE_SIGN_STYLE=Manual \
-            DEVELOPMENT_TEAM="" \
-            PROVISIONING_PROFILE_SPECIFIER="" \
-            ONLY_ACTIVE_ARCH=NO \
             build 2>&1 | tee xcodebuild.log
 
       - name: Print xcodebuild log on failure
@@ -46,8 +48,6 @@ jobs:
         run: |
           echo "=== LAST 80 LINES OF XCODEBUILD LOG ==="
           tail -80 xcodebuild.log || true
-          echo "=== ERROR ANNOTATIONS ==="
-          tail -30 xcodebuild.log | sed 's/^/::error::/' || true
 
       - name: Inspect build products
         run: |
