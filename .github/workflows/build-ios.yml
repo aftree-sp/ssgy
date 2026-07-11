@@ -35,19 +35,19 @@ jobs:
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=YES \
             CODE_SIGN_IDENTITY="-" \
-            CODE_SIGN_STYLE=Automatic \
+            CODE_SIGN_STYLE=Manual \
             DEVELOPMENT_TEAM="" \
             PROVISIONING_PROFILE_SPECIFIER="" \
-            ENABLE_BITCODE=NO \
             ONLY_ACTIVE_ARCH=NO \
-            SWIFT_OPTIMIZATION_LEVEL="-O" \
             build 2>&1 | tee xcodebuild.log
 
       - name: Print xcodebuild log on failure
         if: failure()
         run: |
-          echo "=== LAST 100 LINES OF XCODEBUILD LOG ==="
-          tail -100 xcodebuild.log || true
+          echo "=== LAST 80 LINES OF XCODEBUILD LOG ==="
+          tail -80 xcodebuild.log || true
+          echo "=== ERROR ANNOTATIONS ==="
+          tail -30 xcodebuild.log | sed 's/^/::error::/' || true
 
       - name: Inspect build products
         run: |
