@@ -19,68 +19,54 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Debug compilation
-        run: |
-          xcrun --sdk iphoneos --show-sdk-path > /tmp/build.log 2>&1
-          xcrun -sdk iphoneos swiftc -print-target-info >> /tmp/build.log 2>&1
-          echo '---' >> /tmp/build.log
-          echo 'let x = 1' | xcrun -sdk iphoneos swiftc - -o /tmp/t1.o -emit-object >> /tmp/build.log 2>&1
-          echo "exit=$?" >> /tmp/build.log
-          echo '---' >> /tmp/build.log
-          echo 'import UIKit; print("ok")' > /tmp/t1.swift
-          xcrun -sdk iphoneos swiftc -target arm64-apple-ios16.0 /tmp/t1.swift -o /tmp/t1.o -emit-object >> /tmp/build.log 2>&1
-          echo "exit=$?" >> /tmp/build.log
-          echo '---XXX---' >> /tmp/build.log
-          cat /tmp/build.log
-
-      - name: Upload build log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log
-          path: /tmp/build.log
-          if-no-files-found: ignore
-
       - name: Build .app
         run: |
           SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          echo "SDK: $SDK"
           mkdir -p build/ssgy.app
 
-          # Compile AppDelegate
-          xcrun -sdk iphoneos swiftc -target arm64-apple-ios16.0 \
+          # Compile AppDelegate → .o
+          swiftc \
+            -sdk "$SDK" \
+            -target arm64-apple-ios18.5 \
             -parse-as-library -emit-object \
             -o build/AppDelegate.o \
-            ssgy/AppDelegate.swift 2>>/tmp/err.log || true
-          cat /tmp/err.log 2>/dev/null || true
+            ssgy/AppDelegate.swift 2>&1
+          echo "AppDelegate OK"
 
-          # Compile ViewController
-          xcrun -sdk iphoneos swiftc -target arm64-apple-ios16.0 \
+          # Compile ViewController → .o
+          swiftc \
+            -sdk "$SDK" \
+            -target arm64-apple-ios18.5 \
             -parse-as-library -emit-object \
             -o build/ViewController.o \
-            ssgy/ViewController.swift 2>>/tmp/err2.log || true
-          cat /tmp/err2.log 2>/dev/null || true
+            ssgy/ViewController.swift 2>&1
+          echo "ViewController OK"
 
-          # Link
-          if [ -f build/AppDelegate.o ] && [ -f build/ViewController.o ]; then
-            xcrun -sdk iphoneos swiftc -target arm64-apple-ios16.0 \
-              -emit-executable -o build/ssgy.app/ssgy \
-              build/AppDelegate.o build/ViewController.o
-            cp ssgy/Info.plist build/ssgy.app/
-            printf 'APPL????' > build/ssgy.app/PkgInfo
-            ls -lh build/ssgy.app/ssgy
-          fi
+          # Link → executable
+          swiftc \
+            -sdk "$SDK" \
+            -target arm64-apple-ios18.5 \
+            -emit-executable \
+            -o build/ssgy.app/ssgy \
+            build/AppDelegate.o build/ViewController.o \
+            -framework UIKit -framework AVFoundation 2>&1
+          echo "Link OK"
+
+          file build/ssgy.app/ssgy
+          cp ssgy/Info.plist build/ssgy.app/
+          printf 'APPL????' > build/ssgy.app/PkgInfo
 
       - name: Package IPA
         run: |
-          if [ -f build/ssgy.app/ssgy ]; then
-            mkdir -p Payload
-            cp -R build/ssgy.app Payload/
-            cd Payload && zip -r ../ssgy-unsigned.ipa . && cd ..
-            ls -lh ssgy-unsigned.ipa
-          else
-            echo "No binary built, skipping IPA"
+          if [ ! -f build/ssgy.app/ssgy ]; then
+            echo "No binary found!"
             exit 1
           fi
+          mkdir -p Payload
+          cp -R build/ssgy.app Payload/
+          cd Payload && zip -r ../ssgy-unsigned.ipa . && cd ..
+          ls -lh ssgy-unsigned.ipa
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
