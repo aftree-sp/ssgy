@@ -1,5 +1,30 @@
+# Flutter
+*.iml
+.gradle/
+.idea/
+.settings/
+.symlinks/
+.project/
+.classpath
+.dart_tool/
+.packages
+.pub/
+build/
+flutter_*
+
+# iOS
 *.ipa
 *.app
-.DS_Store
-build/
 DerivedData/
+**/Pods/
+
+# macOS
+.DS_Store
+
+# Android
+local.properties
+key.properties
+
+# Other
+*.log
+*.tmp

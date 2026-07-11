@@ -19,85 +19,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install xcodegen
-        run: brew install xcodegen
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
 
-      - name: Generate Xcode project
-        run: xcodegen generate
+      - name: Flutter pub get
+        run: flutter pub get
 
-      - name: Inspect generated project
+      - name: Build unsigned iOS .app
         run: |
-          echo "=== xcodebuild -list ==="
-          xcodebuild -project ssgy.xcodeproj -list
-          echo "=== Info.plist path check ==="
-          ls -la ssgy/Info.plist
+          flutter build ios --release --no-codesign 2>&1 | tail -50
 
-      - name: Build .app
+      - name: Create IPA
         run: |
-          set -euxo pipefail
-          xcodebuild -project ssgy.xcodeproj \
-            -scheme ssgy \
-            -configuration Debug \
-            -sdk iphoneos \
-            -derivedDataPath build \
-            CODE_SIGN_IDENTITY="-" \
-            build 2>&1 | tee xcodebuild.log
-
-      - name: Print xcodebuild log on failure
-        if: failure()
-        run: |
-          echo "=== LAST 80 LINES OF XCODEBUILD LOG ==="
-          tail -80 xcodebuild.log || true
-
-      - name: Inspect build products
-        run: |
-          echo "=== build tree ==="
-          find build -maxdepth 4 -type d 2>/dev/null | head -50
-          echo "=== expected .app path ==="
-          ls -la build/Build/Products/Debug-iphoneos/ssgy.app 2>/dev/null || echo "not at expected path"
-          echo "=== any .app ==="
-          find build -name "*.app" -type d 2>/dev/null || true
-
-      - name: Package unsigned IPA
-        run: |
-          set -euxo pipefail
-          APP="build/Build/Products/Debug-iphoneos/ssgy.app"
-          if [ ! -d "$APP" ]; then
-            APP=$(find build -name "ssgy.app" -type d | head -1)
-          fi
-          if [ -z "$APP" ] || [ ! -d "$APP" ]; then
-            echo "No ssgy.app found"
-            exit 1
-          fi
-
-          echo "=== app bundle contents ==="
-          ls -la "$APP"
-
-          EXE="$APP/ssgy"
-          if [ ! -f "$EXE" ]; then
-            echo "No executable ssgy inside .app"
-            exit 1
-          fi
-          file "$EXE"
-
           mkdir -p Payload
-          cp -R "$APP" Payload/
-          rm -rf Payload/ssgy.app/_CodeSignature 2>/dev/null || true
-          rm -f Payload/ssgy.app/embedded.mobileprovision 2>/dev/null || true
-          cd Payload && zip -r ../ssgy-unsigned.ipa . && cd ..
-          ls -lh ssgy-unsigned.ipa
+          cp -R build/ios/iphoneos/Runner.app Payload/
+          cd Payload && zip -r ../ssgy.ipa . && cd ..
+          ls -lh ssgy.ipa
+          file ssgy.ipa
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: ssgy-unsigned
-          path: ssgy-unsigned.ipa
+          path: ssgy.ipa
           if-no-files-found: error
-
-      - name: Upload build log on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-logs
-          path: xcodebuild.log
-          if-no-files-found: ignore
