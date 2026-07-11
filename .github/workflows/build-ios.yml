@@ -19,65 +19,45 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install xcodegen
-        run: brew install xcodegen
-
-      - name: Generate Xcode project
-        run: xcodegen generate
-
-      - name: Debug project settings
-        run: xcodebuild -project ssgy.xcodeproj -scheme ssgy -showBuildSettings CODE_SIGNING_ALLOWED=NO 2>&1 | head -40
-
-      - name: Build unsigned .app (save log)
+      - name: Build .app with swiftc (direct, no Xcode project needed)
         run: |
-          set -o pipefail
-          xcodebuild -project ssgy.xcodeproj \
-            -scheme ssgy \
-            -configuration Debug \
-            -sdk iphoneos \
-            -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO \
-            build 2>&1 | tee xcodebuild.log
-          exit ${PIPESTATUS[0]}
-        continue-on-error: true
+          set -eux
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          echo "SDK: $SDK"
+          mkdir -p build/ssgy.app
 
-      - name: Show last 50 lines of build log
-        if: always()
-        run: tail -50 xcodebuild.log
+          # Compile Swift sources into a single executable
+          swiftc \
+            -target arm64-apple-ios16.0 \
+            -sdk "$SDK" \
+            -module-name ssgy \
+            -emit-executable \
+            -o build/ssgy.app/ssgy \
+            ssgy/AppDelegate.swift \
+            ssgy/ViewController.swift \
+            -framework UIKit \
+            -framework AVFoundation \
+            -framework Foundation \
+            -Xlinker -rpath -Xlinker /usr/lib/swift \
+            -tools-destination /dev/null
 
-      - name: Upload build log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: xcodebuild-log
-          path: xcodebuild.log
-          if-no-files-found: ignore
+          echo "=== Binary size ==="
+          ls -lh build/ssgy.app/ssgy
+          file build/ssgy.app/ssgy
 
-      - name: Find build artifacts (always)
-        if: always()
-        run: |
-          echo "=== BUILD DIR ==="
-          ls -la build/ 2>/dev/null || echo "no build dir"
-          echo "=== .app FILES ==="
-          find build -name "*.app" -type d 2>/dev/null || echo "no .app found"
-          echo "=== .xcarchive ==="
-          find build -name "*.xcarchive" -type d 2>/dev/null || echo "no xcarchive"
-          find build -name "*.o" -type f 2>/dev/null | head -5 || true
+          # Copy Info.plist
+          cp ssgy/Info.plist build/ssgy.app/
+
+          # Create PkgInfo (required for iOS app bundles)
+          echo -n 'APPL???' > build/ssgy.app/PkgInfo
+
+          echo "=== Bundle contents ==="
+          ls -la build/ssgy.app/
 
       - name: Package unsigned IPA
         run: |
-          APP=$(find build -name "*.app" -type d -maxdepth 4 | head -1)
-          if [ -z "$APP" ]; then
-            echo "No .app found"
-            find build -name "*.app" -o -name "*.ipa" 2>/dev/null | head -10
-            exit 1
-          fi
-          echo "Found .app: $APP"
           mkdir -p Payload
-          cp -R "$APP" Payload/
-          # Strip any signature remnants
-          rm -rf Payload/*.app/_CodeSignature 2>/dev/null || true
-          rm -rf Payload/*.app/embedded.mobileprovision 2>/dev/null || true
+          cp -R build/ssgy.app Payload/
           cd Payload && zip -r ../ssgy-unsigned.ipa . && cd ..
           ls -lh ssgy-unsigned.ipa
 
